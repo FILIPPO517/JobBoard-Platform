@@ -1,0 +1,9 @@
+# Ignora le credenziali del database
+/backend/config.php
+
+# Ignora i file caricati dagli utenti
+/uploads/
+
+# Ignora file di sistema
+.DS_Store
+*.log
