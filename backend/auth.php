@@ -1,8 +1,6 @@
 <?php
-// Avviamo la sessione (ci servirà per ricordare l'utente dopo il login)
+// Avviamo la sessione
 session_start();
-
-// Includiamo la connessione al database
 require_once 'config.php';
 
 // ==========================================
@@ -13,84 +11,75 @@ if (isset($_POST['registrazione'])) {
     $ruolo = $_POST['ruolo'];
     $email = trim($_POST['email']);
     $password = $_POST['password'];
-    
-    // Criptiamo la password per massima sicurezza
     $password_hash = password_hash($password, PASSWORD_BCRYPT);
 
     try {
-        // Iniziamo la transazione di sicurezza
         $pdo->beginTransaction();
 
         if ($ruolo === 'lavoratore') {
             $nome = trim($_POST['nome']);
             $cognome = trim($_POST['cognome']);
 
-            // A. Creo le credenziali nella tabella utenti
+            // 1. Creo l'utente
             $stmt = $pdo->prepare("INSERT INTO utenti (email, password, ruolo) VALUES (?, ?, 'lavoratore')");
             $stmt->execute([$email, $password_hash]);
-            $id_nuovo_utente = $pdo->lastInsertId(); // Prendo l'ID appena generato
+            $id_nuovo_utente = $pdo->lastInsertId();
 
-            // B. Creo il profilo lavoratore collegato nelle nuove colonne separate
+            // 2. Creo il profilo lavoratore
             $stmt_prof = $pdo->prepare("INSERT INTO profili_lavoratori (id_utente, nome, cognome) VALUES (?, ?, ?)");
             $stmt_prof->execute([$id_nuovo_utente, $nome, $cognome]);
 
         } elseif ($ruolo === 'azienda') {
-            $ragione_sociale = trim($_POST['ragione_sociale']);
-            $partita_iva = trim($_POST['partita_iva']);
+            
+            // 1. CREO PRIMA L'UTENTE (senza azienda per ora, la aggiorno dopo)
+            $stmt_utente = $pdo->prepare("INSERT INTO utenti (email, password, ruolo) VALUES (?, ?, 'azienda')");
+            $stmt_utente->execute([$email, $password_hash]);
+            $id_nuovo_utente = $pdo->lastInsertId(); // ECCO L'ID CHE CI MANCAVA!
 
-            // A. Creo prima l'entità azienda globale
-            $stmt_az = $pdo->prepare("INSERT INTO aziende (ragione_sociale, partita_iva) VALUES (?, ?)");
-            $stmt_az->execute([$ragione_sociale, $partita_iva]);
-            $id_nuova_azienda = $pdo->lastInsertId(); // Prendo l'ID dell'azienda creata
+            $codice_invito = trim($_POST['codice_invito']);
 
-            // B. Creo l'utente recruiter collegandolo a quell'azienda
-            $stmt = $pdo->prepare("INSERT INTO utenti (email, password, ruolo, id_azienda) VALUES (?, ?, 'azienda', ?)");
-            $stmt->execute([$email, $password_hash, $id_nuova_azienda]);
+            // 2. GESTISCO L'AZIENDA
+            // SE L'UTENTE HA INSERITO UN CODICE INVITO (Si unisce a un'azienda esistente)
+            if (!empty($codice_invito)) {
+                $stmt_check = $pdo->prepare("SELECT id_azienda FROM aziende WHERE codice_invito = ?");
+                $stmt_check->execute([$codice_invito]);
+                $azienda_esistente = $stmt_check->fetch(PDO::FETCH_ASSOC);
+
+                if ($azienda_esistente) {
+                    $id_azienda_definitivo = $azienda_esistente['id_azienda'];
+                } else {
+                    throw new PDOException("Il codice invito inserito non è valido o non esiste.");
+                }
+
+            // SE CREA UNA NUOVA AZIENDA
+            } else {
+                $ragione_sociale = trim($_POST['ragione_sociale']);
+                $partita_iva = trim($_POST['partita_iva']);
+                
+                // Genero solo il codice invito
+                $nuovo_codice = 'AZ-' . strtoupper(substr(md5(uniqid()), 0, 6));
+                
+                // 3. INSERISCO L'AZIENDA USANDO L'ID_UTENTE APPENA CREATO
+                $stmt_az = $pdo->prepare("INSERT INTO aziende (ragione_sociale, partita_iva, codice_invito, stato_verifica, id_utente) VALUES (?, ?, ?, 'approvata', ?)");
+                $stmt_az->execute([$ragione_sociale, $partita_iva, $nuovo_codice, $id_nuovo_utente]);
+                $id_azienda_definitivo = $pdo->lastInsertId(); 
+            }
+
+            // 4. AGGIORNO L'UTENTE COLLEGANDOLO ALLA SUA AZIENDA DEFINITIVA
+            $stmt_update = $pdo->prepare("UPDATE utenti SET id_azienda = ? WHERE id_utente = ?");
+            $stmt_update->execute([$id_azienda_definitivo, $id_nuovo_utente]);
         }
 
-        // Se è andato tutto liscio, salviamo tutto definitivamente!
         $pdo->commit();
-
-        // Riportiamo l'utente alla pagina di login con un messaggio di successo
-        header("Location: ../index.php?msg=registrazione_ok");
+        // Redirect corretto alla pagina di login (prima era index.php)
+        header("Location: ../login.php?msg=registrazione_ok");
         exit;
 
     } catch (PDOException $e) {
-        // Se qualcosa va storto (es. email già usata), annulla le modifiche
         $pdo->rollBack();
-        die("Errore durante la registrazione: Controlla che l'email non sia già in uso. Dettaglio tecnico: " . $e->getMessage());
+        die("Errore: " . $e->getMessage());
     }
 }
 
-// ==========================================
-// 2. GESTIONE DEL LOGIN
-// ==========================================
-if (isset($_POST['login'])) {
-    $email = trim($_POST['email']);
-    $password = $_POST['password'];
 
-    // Cerchiamo l'utente nel database
-    $stmt = $pdo->prepare("SELECT * FROM utenti WHERE email = ?");
-    $stmt->execute([$email]);
-    $utente = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    // Se l'utente esiste e la password combacia con quella criptata
-    if ($utente && password_verify($password, $utente['password'])) {
-        
-        // Salviamo il "pass" in sessione
-        $_SESSION['id_utente'] = $utente['id_utente'];
-        $_SESSION['ruolo'] = $utente['ruolo'];
-        
-        if ($utente['ruolo'] === 'azienda') {
-            $_SESSION['id_azienda'] = $utente['id_azienda'];
-        }
-        
-        // Lo mandiamo alla Bacheca
-        header("Location: ../bacheca.php");
-        exit;
-    } else {
-        // Se sbaglia, lo rimandiamo al form
-        die("Credenziali errate! Torna indietro e riprova.");
-    }
-}
 ?>

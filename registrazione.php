@@ -57,6 +57,16 @@
 
                         <div id="campi_azienda" style="display: none;">
                             <h5 class="mb-3 border-bottom pb-2 mt-3">Dati Aziendali</h5>
+                            
+                            <div class="alert alert-info mb-3">
+                                <strong>Hai un codice invito?</strong> Inseriscilo qui sotto per unirti ai tuoi colleghi. Se invece sei il primo a registrare l'azienda, lascia questo campo vuoto e compila i dati sottostanti.
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="codice_invito" class="form-label text-primary fw-bold">Codice Invito Aziendale (Opzionale)</label>
+                                <input type="text" class="form-control border-primary" id="codice_invito" name="codice_invito" placeholder="Es. AZ-1A2B3C">
+                            </div>
+
                             <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <label for="ragione_sociale" class="form-label">Ragione Sociale</label>
@@ -75,7 +85,7 @@
                     </form>
 
                     <div class="text-center mt-4">
-                        <a href="index.php" class="text-decoration-none">Hai già un account? Accedi qui</a>
+                        <a href="login.php" class="text-decoration-none">Hai già un account? Accedi qui</a>
                     </div>
 
                 </div>
